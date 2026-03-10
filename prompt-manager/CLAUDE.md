@@ -23,7 +23,7 @@
 - Export prompts to `.md`, `.yaml`, `.json`
 - Docker required for MongoDB; all other dependencies are local
 
-> See [`docs/business-requirements.md`](docs/business-requirements.md)
+> See [`docs/product/business-requirements.md`](docs/product/business-requirements.md)
 
 ---
 
@@ -36,7 +36,7 @@ Two core entities: **Prompts** and **Templates**.
 
 UI is a three-pane layout: center split editor, bottom metadata/export pane, right sidebar for navigation and search.
 
-> See [`docs/product-requirements.md`](docs/product-requirements.md)
+> See [`docs/product/product-requirements.md`](docs/product/product-requirements.md)
 
 ---
 
@@ -51,13 +51,29 @@ UI is a three-pane layout: center split editor, bottom metadata/export pane, rig
 
 Startup: `docker-compose up` → `uvicorn main:app --reload` → `python app.py`
 
-> See [`docs/architecture.md`](docs/architecture.md)
+> See [`docs/architecture/architecture.md`](docs/architecture/architecture.md)
 
 ---
 
 ## Docs
 
 - [`docs/requirements.md`](docs/requirements.md) — index
-- [`docs/business-requirements.md`](docs/business-requirements.md)
-- [`docs/product-requirements.md`](docs/product-requirements.md)
-- [`docs/architecture.md`](docs/architecture.md)
+- [`docs/product/business-requirements.md`](docs/product/business-requirements.md)
+- [`docs/product/product-requirements.md`](docs/product/product-requirements.md)
+- [`docs/architecture/architecture.md`](docs/architecture/architecture.md)
+- [`docs/architecture/design.md`](docs/architecture/design.md) — consolidated technical design reference
+- [`docs/engineering/project-structure.md`](docs/engineering/project-structure.md)
+- [`docs/engineering/coding-standards.md`](docs/engineering/coding-standards.md)
+- [`docs/engineering/dev-setup.md`](docs/engineering/dev-setup.md)
+- [`docs/engineering/testing.md`](docs/engineering/testing.md)
+- [`docs/reference/api-examples.md`](docs/reference/api-examples.md)
+- [`docs/reference/troubleshooting.md`](docs/reference/troubleshooting.md)
+- [`docs/doc-skills.md`](docs/doc-skills.md) — skills overview
+
+## Skills
+
+- `/pm` — scope & task breakdown
+- `/architect` — design & API decisions (always confirms with human)
+- `/build` — feature implementation
+- `/bug-hunter` — structured debugging, logs to `docs/bugs.md`
+- `/doc-refresh` — detect and fix doc drift after any architectural or API change
