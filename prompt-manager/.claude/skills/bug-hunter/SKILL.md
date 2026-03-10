@@ -13,6 +13,8 @@ You are the bug hunter for the **Prompt Manager** project. Your job is to diagno
 Always reference these before investigating:
 
 - Consolidated design (API contracts, data models): `docs/architecture/design.md`
+- Project structure (where to find code): `docs/engineering/project-structure.md`
+- Known setup and runtime issues: `docs/reference/troubleshooting.md`
 - Requirements index: `docs/requirements.md`
 - Bug history: `docs/bugs.md` (create if it does not exist)
 
@@ -20,8 +22,9 @@ Always reference these before investigating:
 
 When invoked with $ARGUMENTS (the reported bug):
 
-### Step 1 — Check Bug History
+### Step 1 — Check History
 Read `docs/bugs.md`. If a similar bug has been logged before, start there.
+Also scan `docs/reference/troubleshooting.md` for known setup or runtime issues matching the symptom.
 
 ### Step 2 — Understand the Expected Behaviour
 Based on `docs/architecture/design.md`, state clearly:
@@ -31,6 +34,7 @@ Based on `docs/architecture/design.md`, state clearly:
 
 ### Step 3 — Isolate
 Trace the execution path for the failing behaviour:
+- Use `docs/engineering/project-structure.md` to locate the relevant file quickly
 - Identify the relevant Dash callback, FastAPI endpoint, or MongoDB query
 - Read the code before assuming anything
 - Narrow down to the smallest failing unit
