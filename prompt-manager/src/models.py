@@ -1,0 +1,45 @@
+from datetime import datetime, timezone
+from uuid import uuid4
+
+from pydantic import BaseModel, Field
+
+
+class Variable(BaseModel):
+    """A placeholder variable definition within a template."""
+
+    name: str
+    description: str
+
+
+class Prompt(BaseModel):
+    """A stored prompt with content, tags, and optional template linkage."""
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    name: str
+    description: str = ""
+    content: str
+    tags: list[str] = Field(default_factory=list)
+    template_id: str | None = None
+    variable_values: dict[str, str] = Field(default_factory=dict)
+    created_datetime: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    updated_datetime: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
+class Template(BaseModel):
+    """A prompt template with variable placeholders."""
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    name: str
+    description: str = ""
+    content: str
+    variables: list[Variable] = Field(default_factory=list)
+    created_datetime: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    updated_datetime: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
