@@ -4,8 +4,8 @@
 
 **Goal:** Runnable skeleton with data models and MongoDB access.
 
-- [ ] `docker-compose.yml` — MongoDB container
-- [ ] `.env` / `.env.example` — `MONGO_URI`, `API_BASE_URL`
+- [x] `docker-compose.yml` — MongoDB container
+- [x] `.env` / `.env.example` — `MONGO_URI`, `API_BASE_URL`
 - [ ] `src/config.py` — env var loading
 - [ ] `src/models.py` — `Variable`, `Prompt`, `Template` Pydantic models (with UUID auto-gen, datetime auto-set)
 - [ ] `src/repositories/prompts.py` — `create`, `get`, `list`, `update`, `delete`
