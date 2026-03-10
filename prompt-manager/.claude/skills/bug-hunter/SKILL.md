@@ -1,8 +1,7 @@
 ---
 name: bug-hunter
 description: Structured bug investigation for Prompt Manager. Use when diagnosing a bug or unexpected behaviour. Follows a defined debugging flow and logs findings to docs/bugs.md for future reference.
-argument-hint: [describe the bug or unexpected behaviour]
-allowed-tools: Read, Glob, Grep, Bash
+argument-hint: describe the bug or unexpected behaviour
 ---
 
 # Bug Hunter — Prompt Manager
@@ -13,24 +12,29 @@ You are the bug hunter for the **Prompt Manager** project. Your job is to diagno
 
 Always reference these before investigating:
 
-- Architecture: `docs/architecture.md`
+- Consolidated design (API contracts, data models): `docs/architecture/design.md`
+- Project structure (where to find code): `docs/engineering/project-structure.md`
+- Known setup and runtime issues: `docs/reference/troubleshooting.md`
+- Requirements index: `docs/requirements.md`
 - Bug history: `docs/bugs.md` (create if it does not exist)
 
 ## Debugging Workflow
 
 When invoked with $ARGUMENTS (the reported bug):
 
-### Step 1 — Check Bug History
+### Step 1 — Check History
 Read `docs/bugs.md`. If a similar bug has been logged before, start there.
+Also scan `docs/reference/troubleshooting.md` for known setup or runtime issues matching the symptom.
 
 ### Step 2 — Understand the Expected Behaviour
-Based on `docs/product-requirements.md` and `docs/architecture.md`, state clearly:
+Based on `docs/architecture/design.md`, state clearly:
 - What should happen
 - What is actually happening
 - Where in the stack the gap likely lives (Frontend / API / DB)
 
 ### Step 3 — Isolate
 Trace the execution path for the failing behaviour:
+- Use `docs/engineering/project-structure.md` to locate the relevant file quickly
 - Identify the relevant Dash callback, FastAPI endpoint, or MongoDB query
 - Read the code before assuming anything
 - Narrow down to the smallest failing unit
