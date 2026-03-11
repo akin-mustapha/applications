@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 
 from src.config import MONGO_URI
@@ -12,11 +14,8 @@ from src.models import (
 from src.repositories import prompts as prompts_repo
 from src.repositories import templates as templates_repo
 
-app = FastAPI(title="Prompt Manager")
-
-
-@app.on_event("startup")
-def startup() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """Create unique indexes on `id` for both collections at startup."""
     from pymongo import MongoClient
 
@@ -24,6 +23,10 @@ def startup() -> None:
     db = client["prompt_manager"]
     db["prompts"].create_index("id", unique=True)
     db["templates"].create_index("id", unique=True)
+    yield
+
+
+app = FastAPI(title="Prompt Manager", lifespan=lifespan)
 
 
 @app.get("/prompts", response_model=list[Prompt])
