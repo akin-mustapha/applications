@@ -464,5 +464,45 @@ def instantiate_template(
     )
 
 
+@app.callback(
+    Output("btn-export", "style"),
+    Output("export-format", "style"),
+    Input("selected-type", "data"),
+    Input("selected-id", "data"),
+)
+def update_export_visibility(
+    selected_type: str | None, selected_id: str | None
+) -> tuple:
+    """Show export controls only when a prompt is selected."""
+    visible = {"display": "inline-block"}
+    hidden = {"display": "none"}
+    if selected_type == "prompt" and selected_id:
+        return visible, visible
+    return hidden, hidden
+
+
+@app.callback(
+    Output("download", "data"),
+    Input("btn-export", "n_clicks"),
+    State("selected-id", "data"),
+    State("export-format", "value"),
+    prevent_initial_call=True,
+)
+def export_prompt(n_clicks: int, selected_id: str | None, fmt: str) -> dict | None:
+    """Fetch the export endpoint and trigger a file download."""
+    if not selected_id:
+        raise dash.exceptions.PreventUpdate
+    resp = requests.get(
+        f"{API_BASE_URL}/prompts/{selected_id}/export",
+        params={"format": fmt},
+    )
+    content_disp = resp.headers.get("Content-Disposition", "")
+    if "filename=" in content_disp:
+        filename = content_disp.split("filename=")[-1].strip()
+    else:
+        filename = f"export.{fmt}"
+    return dcc.send_bytes(resp.content, filename)
+
+
 if __name__ == "__main__":
     app.run(debug=True)
