@@ -89,3 +89,42 @@ def test_delete_prompt(client):
 def test_delete_prompt_not_found(client):
     resp = client.delete("/prompts/nonexistent-id")
     assert resp.status_code == 404
+
+
+def test_export_prompt_md(client):
+    create = client.post("/prompts", json={"name": "Export Me", "content": "# Hello"})
+    prompt_id = create.json()["id"]
+
+    resp = client.get(f"/prompts/{prompt_id}/export?format=md")
+    assert resp.status_code == 200
+    assert "text/markdown" in resp.headers["content-type"]
+    assert resp.text == "# Hello"
+
+
+def test_export_prompt_yaml(client):
+    create = client.post("/prompts", json={"name": "Export Me", "content": "body"})
+    prompt_id = create.json()["id"]
+
+    resp = client.get(f"/prompts/{prompt_id}/export?format=yaml")
+    assert resp.status_code == 200
+    assert "application/x-yaml" in resp.headers["content-type"]
+
+
+def test_export_prompt_json(client):
+    create = client.post("/prompts", json={"name": "Export Me", "content": "body"})
+    prompt_id = create.json()["id"]
+
+    resp = client.get(f"/prompts/{prompt_id}/export?format=json")
+    assert resp.status_code == 200
+    assert "application/json" in resp.headers["content-type"]
+    data = resp.json()
+    assert data["name"] == "Export Me"
+
+
+def test_export_content_disposition(client):
+    create = client.post("/prompts", json={"name": "My Prompt", "content": "body"})
+    prompt_id = create.json()["id"]
+
+    resp = client.get(f"/prompts/{prompt_id}/export?format=md")
+    assert resp.status_code == 200
+    assert resp.headers["content-disposition"] == "attachment; filename=My_Prompt.md"
