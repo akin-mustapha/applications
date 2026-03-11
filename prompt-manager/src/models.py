@@ -65,3 +65,21 @@ class Template(BaseModel):
     updated_datetime: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
+
+
+class TemplateCreate(BaseModel):
+    """Request body for creating a new template."""
+
+    name: str
+    content: str
+    description: str = ""
+    variables: list[Variable] = Field(default_factory=list)
+
+
+class TemplateUpdate(BaseModel):
+    """Request body for partially updating a template."""
+
+    name: str | None = None
+    content: str | None = None
+    description: str | None = None
+    variables: list[Variable] | None = None
