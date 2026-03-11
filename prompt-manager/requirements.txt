@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+pymongo
+pydantic
+python-dotenv
+pyyaml
+dash

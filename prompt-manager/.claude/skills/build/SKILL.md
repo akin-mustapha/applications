@@ -37,6 +37,43 @@ When invoked with $ARGUMENTS:
 5. **Implement** following existing file structure and naming conventions
 6. **Verify** the implementation works end-to-end before marking done
 
+## Phase Planning Mode
+
+When invoked with `phase plan <iteration>` or `phase plan iteration N`:
+
+> This mode is for **planning only** — no code is written. It is triggered after `/pm` iteration plan is approved.
+
+1. **Read** the approved iteration plan (provided in $ARGUMENTS or ask the human to paste it)
+2. **Read** `docs/architecture/design.md` and `docs/engineering/project-structure.md`
+3. **Break** the iteration into sequential, concrete phases
+4. **Output** one block per phase using the format below
+5. **Pause** after outputting and wait for human confirmation before any implementation begins
+
+### Phase Output Format
+
+```
+## Phase N — <Title>
+**Type:** setup | backend | frontend | test | integration
+**Goal:** <one-line description>
+**Tasks:**
+- [ ] <specific task>
+- [ ] <specific task>
+**Files affected:** <list files to create or modify>
+**Depends on:** Phase X (if any), or "none"
+**GitHub issue title:** "Iter N · Phase N — <Title>"
+```
+
+After all phases, output a summary:
+
+```
+| Phase | Title | Type | Depends On |
+|---|---|---|---|
+| 1 | ... | setup | none |
+| 2 | ... | backend | Phase 1 |
+```
+
+Then stop and ask: **"Does this phase breakdown look right? Approve to proceed to issue creation or implementation."**
+
 ## Rules
 
 - Do not add features beyond what was asked
