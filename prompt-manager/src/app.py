@@ -1,3 +1,5 @@
+import re
+
 import dash
 import requests
 from dash import ALL, Input, Output, State, ctx, dcc, html
@@ -115,6 +117,7 @@ app.layout = html.Div(
                             value="md",
                             inline=True,
                         ),
+                        html.Button("Instantiate", id="btn-instantiate", style={"display": "none"}),
                         html.Button("Export", id="btn-export"),
                         html.Button("Save", id="btn-save"),
                         html.Button("Delete", id="btn-delete"),
@@ -144,6 +147,33 @@ def _prompt_list_items(q: str | None) -> list:
     ]
 
 
+def _template_list_items(q: str | None) -> list:
+    """Fetch templates from API and return a list of sidebar button components."""
+    params = {"q": q} if q else {}
+    resp = requests.get(f"{API_BASE_URL}/templates", params=params)
+    return [
+        html.Button(
+            item["name"],
+            id={"type": "template-item", "index": item["id"]},
+            style={"display": "block", "width": "100%", "textAlign": "left"},
+            n_clicks=0,
+        )
+        for item in resp.json()
+    ]
+
+
+def _extract_variables(content: str) -> list[dict]:
+    """Extract unique {{variable_name}} placeholders from template content."""
+    names = re.findall(r"\{\{(\w+)\}\}", content or "")
+    seen: set[str] = set()
+    result = []
+    for name in names:
+        if name not in seen:
+            seen.add(name)
+            result.append({"name": name, "description": ""})
+    return result
+
+
 # --- Callbacks ---
 
 
@@ -161,9 +191,9 @@ app.clientside_callback(
     Input("list-refresh", "data"),
 )
 def update_list(q: str | None, toggle: str, _refresh: int) -> list:
-    """Populate the sidebar list with prompts matching the search query."""
-    if toggle != "prompts":
-        return []
+    """Populate the sidebar list based on the current toggle selection."""
+    if toggle == "templates":
+        return _template_list_items(q)
     return _prompt_list_items(q)
 
 
@@ -206,6 +236,37 @@ def load_prompt(n_clicks_list: list, ids: list) -> tuple:
     Output("input-tags", "value", allow_duplicate=True),
     Output("selected-id", "data", allow_duplicate=True),
     Output("selected-type", "data", allow_duplicate=True),
+    Input({"type": "template-item", "index": ALL}, "n_clicks"),
+    State({"type": "template-item", "index": ALL}, "id"),
+    prevent_initial_call=True,
+)
+def load_template(n_clicks_list: list, ids: list) -> tuple:
+    """Load a template into the editor when clicked in the sidebar."""
+    if not any(n_clicks_list):
+        raise dash.exceptions.PreventUpdate
+    triggered = ctx.triggered_id
+    if triggered is None:
+        raise dash.exceptions.PreventUpdate
+    template_id = triggered["index"]
+    resp = requests.get(f"{API_BASE_URL}/templates/{template_id}")
+    template = resp.json()
+    return (
+        template["content"],
+        template["name"],
+        template.get("description") or "",
+        "",
+        template["id"],
+        "template",
+    )
+
+
+@app.callback(
+    Output("editor", "value", allow_duplicate=True),
+    Output("input-name", "value", allow_duplicate=True),
+    Output("input-description", "value", allow_duplicate=True),
+    Output("input-tags", "value", allow_duplicate=True),
+    Output("selected-id", "data", allow_duplicate=True),
+    Output("selected-type", "data", allow_duplicate=True),
     Output("mode", "data"),
     Input("btn-new-prompt", "n_clicks"),
     prevent_initial_call=True,
@@ -213,6 +274,22 @@ def load_prompt(n_clicks_list: list, ids: list) -> tuple:
 def new_prompt(n_clicks: int) -> tuple:
     """Clear the editor and set mode=new when New Prompt is clicked."""
     return "", "", "", "", None, "prompt", "new"
+
+
+@app.callback(
+    Output("editor", "value", allow_duplicate=True),
+    Output("input-name", "value", allow_duplicate=True),
+    Output("input-description", "value", allow_duplicate=True),
+    Output("input-tags", "value", allow_duplicate=True),
+    Output("selected-id", "data", allow_duplicate=True),
+    Output("selected-type", "data", allow_duplicate=True),
+    Output("mode", "data", allow_duplicate=True),
+    Input("btn-new-template", "n_clicks"),
+    prevent_initial_call=True,
+)
+def new_template(n_clicks: int) -> tuple:
+    """Clear the editor and set mode=new when New Template is clicked."""
+    return "", "", "", "", None, "template", "new"
 
 
 @app.callback(
@@ -230,7 +307,7 @@ def new_prompt(n_clicks: int) -> tuple:
     State("list-refresh", "data"),
     prevent_initial_call=True,
 )
-def save_prompt(
+def save_item(
     n_clicks: int,
     mode: str | None,
     selected_id: str | None,
@@ -241,21 +318,32 @@ def save_prompt(
     tags_str: str | None,
     refresh: int,
 ) -> tuple:
-    """Create or update a prompt when Save is clicked."""
-    if selected_type != "prompt":
+    """Create or update a prompt or template when Save is clicked."""
+    if selected_type == "prompt":
+        tags = [t.strip() for t in (tags_str or "").split(",") if t.strip()]
+        payload: dict = {
+            "name": name or "",
+            "content": content or "",
+            "description": description or "",
+            "tags": tags,
+        }
+        endpoint = f"{API_BASE_URL}/prompts"
+    elif selected_type == "template":
+        payload = {
+            "name": name or "",
+            "content": content or "",
+            "description": description or "",
+            "variables": _extract_variables(content),
+        }
+        endpoint = f"{API_BASE_URL}/templates"
+    else:
         raise dash.exceptions.PreventUpdate
-    tags = [t.strip() for t in (tags_str or "").split(",") if t.strip()]
-    payload = {
-        "name": name or "",
-        "content": content or "",
-        "description": description or "",
-        "tags": tags,
-    }
+
     if mode == "new":
-        resp = requests.post(f"{API_BASE_URL}/prompts", json=payload)
+        resp = requests.post(endpoint, json=payload)
         new_id = resp.json()["id"]
     else:
-        requests.put(f"{API_BASE_URL}/prompts/{selected_id}", json=payload)
+        requests.put(f"{endpoint}/{selected_id}", json=payload)
         new_id = selected_id
     return new_id, "edit", (refresh or 0) + 1
 
@@ -274,17 +362,106 @@ def save_prompt(
     State("list-refresh", "data"),
     prevent_initial_call=True,
 )
-def delete_prompt(
+def delete_item(
     n_clicks: int,
     selected_id: str | None,
     selected_type: str | None,
     refresh: int,
 ) -> tuple:
-    """Delete the current prompt and clear the editor."""
-    if selected_type != "prompt" or not selected_id:
+    """Delete the current prompt or template and clear the editor."""
+    if not selected_id:
         raise dash.exceptions.PreventUpdate
-    requests.delete(f"{API_BASE_URL}/prompts/{selected_id}")
+    if selected_type == "prompt":
+        requests.delete(f"{API_BASE_URL}/prompts/{selected_id}")
+    elif selected_type == "template":
+        requests.delete(f"{API_BASE_URL}/templates/{selected_id}")
+    else:
+        raise dash.exceptions.PreventUpdate
     return "", "", "", "", None, None, (refresh or 0) + 1
+
+
+@app.callback(
+    Output("variable-form", "children"),
+    Output("variable-form", "style"),
+    Output("btn-instantiate", "style"),
+    Input("selected-type", "data"),
+    Input("selected-id", "data"),
+    prevent_initial_call=True,
+)
+def update_variable_form(selected_type: str | None, selected_id: str | None) -> tuple:
+    """Show variable inputs when a saved template is selected; hide otherwise."""
+    hidden = {"display": "none"}
+    if selected_type != "template" or not selected_id:
+        return [], hidden, hidden
+    resp = requests.get(f"{API_BASE_URL}/templates/{selected_id}")
+    variables = resp.json().get("variables") or []
+    if not variables:
+        return [], hidden, hidden
+    inputs = [
+        html.Div(
+            children=[
+                html.Label(
+                    f"{v['name']}: {v['description']}" if v.get("description") else v["name"]
+                ),
+                dcc.Input(
+                    id={"type": "var-input", "index": v["name"]},
+                    type="text",
+                    placeholder=v["name"],
+                    style={"width": "100%"},
+                ),
+            ],
+            style={"marginBottom": "4px"},
+        )
+        for v in variables
+    ]
+    return inputs, {"display": "block"}, {"display": "inline-block"}
+
+
+@app.callback(
+    Output("editor", "value", allow_duplicate=True),
+    Output("input-name", "value", allow_duplicate=True),
+    Output("input-description", "value", allow_duplicate=True),
+    Output("input-tags", "value", allow_duplicate=True),
+    Output("selected-id", "data", allow_duplicate=True),
+    Output("selected-type", "data", allow_duplicate=True),
+    Output("mode", "data", allow_duplicate=True),
+    Output("list-refresh", "data", allow_duplicate=True),
+    Output("sidebar-toggle", "value"),
+    Input("btn-instantiate", "n_clicks"),
+    State({"type": "var-input", "index": ALL}, "value"),
+    State({"type": "var-input", "index": ALL}, "id"),
+    State("selected-id", "data"),
+    State("list-refresh", "data"),
+    prevent_initial_call=True,
+)
+def instantiate_template(
+    n_clicks: int,
+    var_values: list,
+    var_ids: list,
+    template_id: str | None,
+    refresh: int,
+) -> tuple:
+    """Instantiate a template with variable values and load the resulting prompt."""
+    if not template_id:
+        raise dash.exceptions.PreventUpdate
+    variable_values = {v_id["index"]: (val or "") for v_id, val in zip(var_ids, var_values)}
+    resp = requests.post(
+        f"{API_BASE_URL}/templates/{template_id}/instantiate",
+        json={"variable_values": variable_values},
+    )
+    prompt = resp.json()
+    tags = ", ".join(prompt.get("tags") or [])
+    return (
+        prompt["content"],
+        prompt["name"],
+        prompt.get("description") or "",
+        tags,
+        prompt["id"],
+        "prompt",
+        "edit",
+        (refresh or 0) + 1,
+        "prompts",
+    )
 
 
 if __name__ == "__main__":
