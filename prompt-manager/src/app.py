@@ -6,7 +6,7 @@ from dash import ALL, Input, Output, State, ctx, dcc, html
 
 from src.config import API_BASE_URL
 
-app = dash.Dash(__name__)
+app = dash.Dash(__name__, suppress_callback_exceptions=True)
 
 app.layout = html.Div(
     style={"display": "flex", "height": "100vh", "flexDirection": "column"},
@@ -16,6 +16,8 @@ app.layout = html.Div(
         dcc.Store(id="selected-type"),
         dcc.Store(id="mode"),
         dcc.Store(id="list-refresh", data=0),
+        dcc.Store(id="selected-template-store"),
+        dcc.Store(id="active-mode-store", data="prompt"),
         # Download
         dcc.Download(id="download"),
         # Main area: center + sidebar
@@ -96,7 +98,7 @@ app.layout = html.Div(
                             placeholder="Tags (comma-separated)",
                             style={"width": "100%"},
                         ),
-                        html.Div(id="variable-form", style={"display": "none"}),
+                        html.Div(id="variable-form-container", style={"display": "none"}),
                     ],
                 ),
                 html.Div(
@@ -117,7 +119,6 @@ app.layout = html.Div(
                             value="md",
                             inline=True,
                         ),
-                        html.Button("Instantiate", id="btn-instantiate", style={"display": "none"}),
                         html.Button("Export", id="btn-export"),
                         html.Button("Save", id="btn-save"),
                         html.Button("Delete", id="btn-delete"),
@@ -236,6 +237,8 @@ def load_prompt(n_clicks_list: list, ids: list) -> tuple:
     Output("input-tags", "value", allow_duplicate=True),
     Output("selected-id", "data", allow_duplicate=True),
     Output("selected-type", "data", allow_duplicate=True),
+    Output("selected-template-store", "data"),
+    Output("active-mode-store", "data"),
     Input({"type": "template-item", "index": ALL}, "n_clicks"),
     State({"type": "template-item", "index": ALL}, "id"),
     prevent_initial_call=True,
@@ -250,6 +253,10 @@ def load_template(n_clicks_list: list, ids: list) -> tuple:
     template_id = triggered["index"]
     resp = requests.get(f"{API_BASE_URL}/templates/{template_id}")
     template = resp.json()
+    template_store = {
+        "template_id": template["id"],
+        "variables": template.get("variables") or [],
+    }
     return (
         template["content"],
         template["name"],
@@ -257,6 +264,8 @@ def load_template(n_clicks_list: list, ids: list) -> tuple:
         "",
         template["id"],
         "template",
+        template_store,
+        "instantiate",
     )
 
 
@@ -381,22 +390,19 @@ def delete_item(
 
 
 @app.callback(
-    Output("variable-form", "children"),
-    Output("variable-form", "style"),
-    Output("btn-instantiate", "style"),
-    Input("selected-type", "data"),
-    Input("selected-id", "data"),
+    Output("variable-form-container", "children"),
+    Output("variable-form-container", "style"),
+    Input("selected-template-store", "data"),
     prevent_initial_call=True,
 )
-def update_variable_form(selected_type: str | None, selected_id: str | None) -> tuple:
-    """Show variable inputs when a saved template is selected; hide otherwise."""
+def update_variable_form(template_store: dict | None) -> tuple:
+    """Build variable input form when a template is selected; hide otherwise."""
     hidden = {"display": "none"}
-    if selected_type != "template" or not selected_id:
-        return [], hidden, hidden
-    resp = requests.get(f"{API_BASE_URL}/templates/{selected_id}")
-    variables = resp.json().get("variables") or []
+    if not template_store:
+        return [], hidden
+    variables = template_store.get("variables") or []
     if not variables:
-        return [], hidden, hidden
+        return [], hidden
     inputs = [
         html.Div(
             children=[
@@ -414,7 +420,8 @@ def update_variable_form(selected_type: str | None, selected_id: str | None) -> 
         )
         for v in variables
     ]
-    return inputs, {"display": "block"}, {"display": "inline-block"}
+    inputs.append(html.Button("Create from Template", id="instantiate-btn"))
+    return inputs, {"display": "block"}
 
 
 @app.callback(
@@ -427,7 +434,7 @@ def update_variable_form(selected_type: str | None, selected_id: str | None) -> 
     Output("mode", "data", allow_duplicate=True),
     Output("list-refresh", "data", allow_duplicate=True),
     Output("sidebar-toggle", "value"),
-    Input("btn-instantiate", "n_clicks"),
+    Input("instantiate-btn", "n_clicks"),
     State({"type": "var-input", "index": ALL}, "value"),
     State({"type": "var-input", "index": ALL}, "id"),
     State("selected-id", "data"),
