@@ -2,7 +2,7 @@ import re
 
 import dash
 import requests
-from dash import ALL, Input, Output, State, ctx, dcc, html
+from dash import ALL, Input, Output, State, ctx, dcc, html, no_update
 
 from src.config import API_BASE_URL
 
@@ -52,6 +52,13 @@ app.layout = html.Div(
                             type="text",
                             placeholder="Search...",
                             debounce=True,
+                            style={"width": "100%", "marginBottom": "4px"},
+                        ),
+                        dcc.Input(
+                            id="tag-filter",
+                            type="text",
+                            placeholder="Filter by tag...",
+                            debounce=True,
                             style={"width": "100%", "marginBottom": "8px"},
                         ),
                         dcc.RadioItems(
@@ -70,6 +77,11 @@ app.layout = html.Div(
                     ],
                 ),
             ],
+        ),
+        # Notification bar
+        html.Div(
+            id="notification",
+            style={"color": "red", "padding": "4px 8px", "minHeight": "24px"},
         ),
         # Bottom pane
         html.Div(
@@ -97,6 +109,7 @@ app.layout = html.Div(
                             style={"width": "100%"},
                         ),
                         html.Div(id="variable-form", style={"display": "none"}),
+                        html.Div(id="var-desc-form", style={"display": "none"}),
                     ],
                 ),
                 html.Div(
@@ -132,9 +145,13 @@ app.layout = html.Div(
 # --- Helpers ---
 
 
-def _prompt_list_items(q: str | None) -> list:
+def _prompt_list_items(q: str | None, tags: str | None) -> list:
     """Fetch prompts from API and return a list of sidebar button components."""
-    params = {"q": q} if q else {}
+    params: dict = {}
+    if q:
+        params["q"] = q
+    if tags:
+        params["tags"] = tags
     resp = requests.get(f"{API_BASE_URL}/prompts", params=params)
     return [
         html.Button(
@@ -162,16 +179,21 @@ def _template_list_items(q: str | None) -> list:
     ]
 
 
-def _extract_variables(content: str) -> list[dict]:
-    """Extract unique {{variable_name}} placeholders from template content."""
+def _extract_variable_names(content: str) -> list[str]:
+    """Extract unique {{variable_name}} placeholder names from template content."""
     names = re.findall(r"\{\{(\w+)\}\}", content or "")
     seen: set[str] = set()
     result = []
     for name in names:
         if name not in seen:
             seen.add(name)
-            result.append({"name": name, "description": ""})
+            result.append(name)
     return result
+
+
+def _extract_variables(content: str) -> list[dict]:
+    """Extract unique {{variable_name}} placeholders with empty descriptions."""
+    return [{"name": name, "description": ""} for name in _extract_variable_names(content)]
 
 
 # --- Callbacks ---
@@ -185,16 +207,28 @@ app.clientside_callback(
 
 
 @app.callback(
+    Output("tag-filter", "style"),
+    Input("sidebar-toggle", "value"),
+)
+def toggle_tag_filter(toggle: str) -> dict:
+    """Show tag filter input only when viewing prompts."""
+    if toggle == "prompts":
+        return {"width": "100%", "marginBottom": "8px"}
+    return {"display": "none"}
+
+
+@app.callback(
     Output("list-area", "children"),
     Input("search-input", "value"),
     Input("sidebar-toggle", "value"),
     Input("list-refresh", "data"),
+    Input("tag-filter", "value"),
 )
-def update_list(q: str | None, toggle: str, _refresh: int) -> list:
+def update_list(q: str | None, toggle: str, _refresh: int, tags: str | None) -> list:
     """Populate the sidebar list based on the current toggle selection."""
     if toggle == "templates":
         return _template_list_items(q)
-    return _prompt_list_items(q)
+    return _prompt_list_items(q, tags)
 
 
 @app.callback(
@@ -204,6 +238,7 @@ def update_list(q: str | None, toggle: str, _refresh: int) -> list:
     Output("input-tags", "value"),
     Output("selected-id", "data"),
     Output("selected-type", "data"),
+    Output("mode", "data", allow_duplicate=True),
     Input({"type": "prompt-item", "index": ALL}, "n_clicks"),
     State({"type": "prompt-item", "index": ALL}, "id"),
     prevent_initial_call=True,
@@ -226,6 +261,7 @@ def load_prompt(n_clicks_list: list, ids: list) -> tuple:
         tags,
         prompt["id"],
         "prompt",
+        "edit",
     )
 
 
@@ -236,6 +272,7 @@ def load_prompt(n_clicks_list: list, ids: list) -> tuple:
     Output("input-tags", "value", allow_duplicate=True),
     Output("selected-id", "data", allow_duplicate=True),
     Output("selected-type", "data", allow_duplicate=True),
+    Output("mode", "data", allow_duplicate=True),
     Input({"type": "template-item", "index": ALL}, "n_clicks"),
     State({"type": "template-item", "index": ALL}, "id"),
     prevent_initial_call=True,
@@ -257,6 +294,7 @@ def load_template(n_clicks_list: list, ids: list) -> tuple:
         "",
         template["id"],
         "template",
+        "edit",
     )
 
 
@@ -296,6 +334,7 @@ def new_template(n_clicks: int) -> tuple:
     Output("selected-id", "data", allow_duplicate=True),
     Output("mode", "data", allow_duplicate=True),
     Output("list-refresh", "data"),
+    Output("notification", "children"),
     Input("btn-save", "n_clicks"),
     State("mode", "data"),
     State("selected-id", "data"),
@@ -305,6 +344,8 @@ def new_template(n_clicks: int) -> tuple:
     State("input-description", "value"),
     State("input-tags", "value"),
     State("list-refresh", "data"),
+    State({"type": "var-desc", "index": ALL}, "value"),
+    State({"type": "var-desc", "index": ALL}, "id"),
     prevent_initial_call=True,
 )
 def save_item(
@@ -317,6 +358,8 @@ def save_item(
     description: str | None,
     tags_str: str | None,
     refresh: int,
+    var_desc_values: list,
+    var_desc_ids: list,
 ) -> tuple:
     """Create or update a prompt or template when Save is clicked."""
     if selected_type == "prompt":
@@ -329,11 +372,19 @@ def save_item(
         }
         endpoint = f"{API_BASE_URL}/prompts"
     elif selected_type == "template":
+        desc_map = {
+            v_id["index"]: (val or "")
+            for v_id, val in zip(var_desc_ids, var_desc_values)
+        }
+        variables = [
+            {"name": n, "description": desc_map.get(n, "")}
+            for n in _extract_variable_names(content or "")
+        ]
         payload = {
             "name": name or "",
             "content": content or "",
             "description": description or "",
-            "variables": _extract_variables(content),
+            "variables": variables,
         }
         endpoint = f"{API_BASE_URL}/templates"
     else:
@@ -341,11 +392,15 @@ def save_item(
 
     if mode == "new":
         resp = requests.post(endpoint, json=payload)
+        if not resp.ok:
+            return no_update, no_update, no_update, resp.json().get("detail", "Save failed")
         new_id = resp.json()["id"]
     else:
-        requests.put(f"{endpoint}/{selected_id}", json=payload)
+        resp = requests.put(f"{endpoint}/{selected_id}", json=payload)
+        if not resp.ok:
+            return no_update, no_update, no_update, resp.json().get("detail", "Save failed")
         new_id = selected_id
-    return new_id, "edit", (refresh or 0) + 1
+    return new_id, "edit", (refresh or 0) + 1, ""
 
 
 @app.callback(
@@ -394,7 +449,15 @@ def update_variable_form(selected_type: str | None, selected_id: str | None) -> 
     if selected_type != "template" or not selected_id:
         return [], hidden, hidden
     resp = requests.get(f"{API_BASE_URL}/templates/{selected_id}")
-    variables = resp.json().get("variables") or []
+    data = resp.json()
+    variables = data.get("variables") or []
+
+    if not variables:
+        variables = [
+            {"name": name, "description": ""}
+            for name in _extract_variable_names(data.get("content", ""))
+        ]
+
     if not variables:
         return [], hidden, hidden
     inputs = [
@@ -418,6 +481,50 @@ def update_variable_form(selected_type: str | None, selected_id: str | None) -> 
 
 
 @app.callback(
+    Output("var-desc-form", "children"),
+    Output("var-desc-form", "style"),
+    Input("selected-type", "data"),
+    Input("selected-id", "data"),
+    prevent_initial_call=True,
+)
+def update_var_desc_form(selected_type: str | None, selected_id: str | None) -> tuple:
+    """Show variable description inputs when a saved template is selected."""
+    hidden = {"display": "none"}
+    if selected_type != "template" or not selected_id:
+        return [], hidden
+    resp = requests.get(f"{API_BASE_URL}/templates/{selected_id}")
+    data = resp.json()
+    variables = data.get("variables") or []
+
+    if not variables:
+        variables = [
+            {"name": name, "description": ""}
+            for name in _extract_variable_names(data.get("content", ""))
+        ]
+
+    if not variables:
+        return [], hidden
+
+    inputs = [
+        html.Div(
+            children=[
+                html.Label(f"{v['name']} description"),
+                dcc.Input(
+                    id={"type": "var-desc", "index": v["name"]},
+                    type="text",
+                    placeholder=f"Describe {v['name']}...",
+                    value=v.get("description") or "",
+                    style={"width": "100%"},
+                ),
+            ],
+            style={"marginBottom": "4px"},
+        )
+        for v in variables
+    ]
+    return inputs, {"display": "block", "marginTop": "4px"}
+
+
+@app.callback(
     Output("editor", "value", allow_duplicate=True),
     Output("input-name", "value", allow_duplicate=True),
     Output("input-description", "value", allow_duplicate=True),
@@ -427,6 +534,7 @@ def update_variable_form(selected_type: str | None, selected_id: str | None) -> 
     Output("mode", "data", allow_duplicate=True),
     Output("list-refresh", "data", allow_duplicate=True),
     Output("sidebar-toggle", "value"),
+    Output("notification", "children", allow_duplicate=True),
     Input("btn-instantiate", "n_clicks"),
     State({"type": "var-input", "index": ALL}, "value"),
     State({"type": "var-input", "index": ALL}, "id"),
@@ -435,7 +543,7 @@ def update_variable_form(selected_type: str | None, selected_id: str | None) -> 
     prevent_initial_call=True,
 )
 def instantiate_template(
-    n_clicks: int,
+    _n_clicks: int,
     var_values: list,
     var_ids: list,
     template_id: str | None,
@@ -449,6 +557,12 @@ def instantiate_template(
         f"{API_BASE_URL}/templates/{template_id}/instantiate",
         json={"variable_values": variable_values},
     )
+    if not resp.ok:
+        return (
+            no_update, no_update, no_update, no_update,
+            no_update, no_update, no_update, no_update,
+            no_update, resp.json().get("detail", "Instantiation failed"),
+        )
     prompt = resp.json()
     tags = ", ".join(prompt.get("tags") or [])
     return (
@@ -461,6 +575,7 @@ def instantiate_template(
         "edit",
         (refresh or 0) + 1,
         "prompts",
+        "",
     )
 
 
@@ -488,7 +603,7 @@ def update_export_visibility(
     State("export-format", "value"),
     prevent_initial_call=True,
 )
-def export_prompt(n_clicks: int, selected_id: str | None, fmt: str) -> dict | None:
+def export_prompt(_n_clicks: int, selected_id: str | None, fmt: str) -> dict | None:
     """Fetch the export endpoint and trigger a file download."""
     if not selected_id:
         raise dash.exceptions.PreventUpdate
@@ -505,4 +620,4 @@ def export_prompt(n_clicks: int, selected_id: str | None, fmt: str) -> dict | No
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
