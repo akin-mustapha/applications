@@ -29,6 +29,28 @@ class Prompt(BaseModel):
     )
 
 
+class PromptCreate(BaseModel):
+    """Request body for creating a new prompt."""
+
+    name: str
+    content: str
+    description: str = ""
+    tags: list[str] = Field(default_factory=list)
+    template_id: str | None = None
+    variable_values: dict[str, str] = Field(default_factory=dict)
+
+
+class PromptUpdate(BaseModel):
+    """Request body for partially updating a prompt."""
+
+    name: str | None = None
+    content: str | None = None
+    description: str | None = None
+    tags: list[str] | None = None
+    template_id: str | None = None
+    variable_values: dict[str, str] | None = None
+
+
 class Template(BaseModel):
     """A prompt template with variable placeholders."""
 
