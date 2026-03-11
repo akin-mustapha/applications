@@ -122,7 +122,7 @@ app.layout = html.Div(
                             value="md",
                             clearable=False,
                         ),
-                        html.Button("Export", id="export-btn"),
+                        dcc.Loading(html.Button("Export", id="export-btn"), type="circle"),
                         html.Button("Save", id="btn-save"),
                         html.Button("Delete", id="btn-delete"),
                     ],
@@ -140,6 +140,9 @@ def _prompt_list_items(q: str | None) -> list:
     """Fetch prompts from API and return a list of sidebar button components."""
     params = {"q": q} if q else {}
     resp = requests.get(f"{API_BASE_URL}/prompts", params=params)
+    items = resp.json()
+    if not items:
+        return [html.Div("No prompts yet", style={"color": "#999", "padding": "4px"})]
     return [
         html.Button(
             item["name"],
@@ -147,7 +150,7 @@ def _prompt_list_items(q: str | None) -> list:
             style={"display": "block", "width": "100%", "textAlign": "left"},
             n_clicks=0,
         )
-        for item in resp.json()
+        for item in items
     ]
 
 
@@ -155,6 +158,9 @@ def _template_list_items(q: str | None) -> list:
     """Fetch templates from API and return a list of sidebar button components."""
     params = {"q": q} if q else {}
     resp = requests.get(f"{API_BASE_URL}/templates", params=params)
+    items = resp.json()
+    if not items:
+        return [html.Div("No templates yet", style={"color": "#999", "padding": "4px"})]
     return [
         html.Button(
             item["name"],
@@ -162,7 +168,7 @@ def _template_list_items(q: str | None) -> list:
             style={"display": "block", "width": "100%", "textAlign": "left"},
             n_clicks=0,
         )
-        for item in resp.json()
+        for item in items
     ]
 
 
@@ -280,12 +286,13 @@ def load_template(n_clicks_list: list, ids: list) -> tuple:
     Output("selected-id", "data", allow_duplicate=True),
     Output("selected-type", "data", allow_duplicate=True),
     Output("mode", "data"),
+    Output("selected-template-store", "data", allow_duplicate=True),
     Input("btn-new-prompt", "n_clicks"),
     prevent_initial_call=True,
 )
 def new_prompt(n_clicks: int) -> tuple:
     """Clear the editor and set mode=new when New Prompt is clicked."""
-    return "", "", "", "", None, "prompt", "new"
+    return "", "", "", "", None, "prompt", "new", None
 
 
 @app.callback(
@@ -423,7 +430,7 @@ def update_variable_form(template_store: dict | None) -> tuple:
         )
         for v in variables
     ]
-    inputs.append(html.Button("Create from Template", id="instantiate-btn"))
+    inputs.append(dcc.Loading(html.Button("Create from Template", id="instantiate-btn"), type="circle"))
     return inputs, {"display": "block"}
 
 
