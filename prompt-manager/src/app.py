@@ -18,8 +18,11 @@ app.layout = html.Div(
         dcc.Store(id="list-refresh", data=0),
         dcc.Store(id="selected-template-store"),
         dcc.Store(id="active-mode-store", data="prompt"),
+        dcc.Store(id="active-prompt-id-store"),
         # Download
         dcc.Download(id="download"),
+        # Error banner
+        html.Div(id="error-banner", style={"display": "none", "color": "red", "padding": "4px 8px"}),
         # Main area: center + sidebar
         html.Div(
             style={"display": "flex", "flex": "1", "overflow": "hidden"},
@@ -434,28 +437,38 @@ def update_variable_form(template_store: dict | None) -> tuple:
     Output("mode", "data", allow_duplicate=True),
     Output("list-refresh", "data", allow_duplicate=True),
     Output("sidebar-toggle", "value"),
+    Output("active-prompt-id-store", "data"),
+    Output("selected-template-store", "data", allow_duplicate=True),
+    Output("active-mode-store", "data", allow_duplicate=True),
+    Output("error-banner", "children"),
+    Output("error-banner", "style"),
     Input("instantiate-btn", "n_clicks"),
     State({"type": "var-input", "index": ALL}, "value"),
     State({"type": "var-input", "index": ALL}, "id"),
-    State("selected-id", "data"),
+    State("selected-template-store", "data"),
     State("list-refresh", "data"),
     prevent_initial_call=True,
 )
 def instantiate_template(
-    n_clicks: int,
+    n_clicks: int | None,
     var_values: list,
     var_ids: list,
-    template_id: str | None,
+    template_store: dict | None,
     refresh: int,
 ) -> tuple:
     """Instantiate a template with variable values and load the resulting prompt."""
-    if not template_id:
+    if not n_clicks or not template_store:
         raise dash.exceptions.PreventUpdate
+    template_id = template_store["template_id"]
     variable_values = {v_id["index"]: (val or "") for v_id, val in zip(var_ids, var_values)}
     resp = requests.post(
         f"{API_BASE_URL}/templates/{template_id}/instantiate",
         json={"variable_values": variable_values},
     )
+    if not resp.ok:
+        detail = resp.json().get("detail", "Instantiation failed")
+        no = dash.no_update
+        return no, no, no, no, no, no, no, no, no, no, no, no, detail, {"display": "block", "color": "red", "padding": "4px 8px"}
     prompt = resp.json()
     tags = ", ".join(prompt.get("tags") or [])
     return (
@@ -468,6 +481,11 @@ def instantiate_template(
         "edit",
         (refresh or 0) + 1,
         "prompts",
+        prompt["id"],
+        None,
+        "prompt",
+        "",
+        {"display": "none"},
     )
 
 
