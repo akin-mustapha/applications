@@ -83,3 +83,9 @@ class TemplateUpdate(BaseModel):
     content: str | None = None
     description: str | None = None
     variables: list[Variable] | None = None
+
+
+class InstantiateRequest(BaseModel):
+    """Request body for instantiating a prompt from a template."""
+
+    variable_values: dict[str, str] = Field(default_factory=dict)
