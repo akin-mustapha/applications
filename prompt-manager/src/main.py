@@ -1,9 +1,14 @@
+import json
+import re
 from contextlib import asynccontextmanager
 
+import yaml
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response
 
 from src.config import MONGO_URI
 from src.models import (
+    InstantiateRequest,
     Prompt,
     PromptCreate,
     PromptUpdate,
@@ -201,3 +206,85 @@ def delete_template(id: str) -> dict[str, bool]:
     if not deleted:
         raise HTTPException(status_code=404, detail="Not found")
     return {"deleted": True}
+
+
+@app.post("/templates/{template_id}/instantiate", response_model=Prompt, status_code=201)
+def instantiate_template(template_id: str, data: InstantiateRequest) -> Prompt:
+    """Instantiate a prompt from a template by substituting variable placeholders.
+
+    Args:
+        template_id: The template UUID string.
+        data: Variable values to substitute into the template content.
+
+    Returns:
+        A newly created Prompt with placeholders replaced by provided values.
+
+    Raises:
+        HTTPException: 404 if the template is not found.
+    """
+    template = templates_repo.get_template(template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    content = template.content
+    for key, value in data.variable_values.items():
+        content = re.sub(r"\{\{" + re.escape(key) + r"\}\}", value, content)
+
+    prompt = Prompt(
+        name=template.name,
+        content=content,
+        description=template.description,
+        template_id=template_id,
+        variable_values=data.variable_values,
+    )
+    return prompts_repo.create_prompt(prompt)
+
+
+def _format_export(prompt: Prompt, fmt: str) -> tuple[str, str, str]:
+    """Render a prompt as exportable content in the requested format.
+
+    Args:
+        prompt: The Prompt to export.
+        fmt: One of ``md``, ``yaml``, or ``json``.
+
+    Returns:
+        A tuple of (content, media_type, filename).
+    """
+    safe_name = prompt.name.replace(" ", "_")
+    if fmt == "md":
+        return prompt.content, "text/markdown", f"{safe_name}.md"
+    if fmt == "yaml":
+        data = json.loads(prompt.model_dump_json())
+        return yaml.dump(data, allow_unicode=True), "application/x-yaml", f"{safe_name}.yaml"
+    # fmt == "json"
+    return prompt.model_dump_json(indent=2), "application/json", f"{safe_name}.json"
+
+
+@app.get("/prompts/{id}/export")
+def export_prompt(id: str, format: str = "md") -> Response:
+    """Export a prompt as a downloadable file.
+
+    Args:
+        id: The prompt UUID string.
+        format: File format — one of ``md``, ``yaml``, or ``json``.
+
+    Returns:
+        A file response with appropriate Content-Type and Content-Disposition.
+
+    Raises:
+        HTTPException: 404 if the prompt is not found.
+        HTTPException: 422 if the format is not supported.
+    """
+    if format not in ("md", "yaml", "json"):
+        raise HTTPException(status_code=422, detail="format must be md, yaml, or json")
+
+    prompt = prompts_repo.get_prompt(id)
+    if prompt is None:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    content, media_type, filename = _format_export(prompt, format)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
