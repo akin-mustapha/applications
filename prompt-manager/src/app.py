@@ -20,7 +20,7 @@ app.layout = html.Div(
         dcc.Store(id="active-mode-store", data="prompt"),
         dcc.Store(id="active-prompt-id-store"),
         # Download
-        dcc.Download(id="download"),
+        dcc.Download(id="export-download"),
         # Error banner
         html.Div(id="error-banner", style={"display": "none", "color": "red", "padding": "4px 8px"}),
         # Main area: center + sidebar
@@ -112,17 +112,17 @@ app.layout = html.Div(
                         "gap": "4px",
                     },
                     children=[
-                        dcc.RadioItems(
-                            id="export-format",
+                        dcc.Dropdown(
+                            id="export-format-dropdown",
                             options=[
                                 {"label": "md", "value": "md"},
                                 {"label": "yaml", "value": "yaml"},
                                 {"label": "json", "value": "json"},
                             ],
                             value="md",
-                            inline=True,
+                            clearable=False,
                         ),
-                        html.Button("Export", id="btn-export"),
+                        html.Button("Export", id="export-btn"),
                         html.Button("Save", id="btn-save"),
                         html.Button("Delete", id="btn-delete"),
                     ],
@@ -490,43 +490,40 @@ def instantiate_template(
 
 
 @app.callback(
-    Output("btn-export", "style"),
-    Output("export-format", "style"),
-    Input("selected-type", "data"),
-    Input("selected-id", "data"),
+    Output("export-btn", "disabled"),
+    Input("active-prompt-id-store", "data"),
 )
-def update_export_visibility(
-    selected_type: str | None, selected_id: str | None
-) -> tuple:
-    """Show export controls only when a prompt is selected."""
-    visible = {"display": "inline-block"}
-    hidden = {"display": "none"}
-    if selected_type == "prompt" and selected_id:
-        return visible, visible
-    return hidden, hidden
+def toggle_export_btn(prompt_id: str | None) -> bool:
+    """Disable Export button when no prompt is active."""
+    return not bool(prompt_id)
 
 
 @app.callback(
-    Output("download", "data"),
-    Input("btn-export", "n_clicks"),
-    State("selected-id", "data"),
-    State("export-format", "value"),
+    Output("export-download", "data"),
+    Output("error-banner", "children", allow_duplicate=True),
+    Output("error-banner", "style", allow_duplicate=True),
+    Input("export-btn", "n_clicks"),
+    State("active-prompt-id-store", "data"),
+    State("export-format-dropdown", "value"),
     prevent_initial_call=True,
 )
-def export_prompt(n_clicks: int, selected_id: str | None, fmt: str) -> dict | None:
+def export_prompt(n_clicks: int, prompt_id: str | None, fmt: str) -> tuple:
     """Fetch the export endpoint and trigger a file download."""
-    if not selected_id:
+    if not prompt_id:
         raise dash.exceptions.PreventUpdate
     resp = requests.get(
-        f"{API_BASE_URL}/prompts/{selected_id}/export",
+        f"{API_BASE_URL}/prompts/{prompt_id}/export",
         params={"format": fmt},
     )
+    if not resp.ok:
+        detail = resp.json().get("detail", "Export failed")
+        return dash.no_update, detail, {"display": "block", "color": "red", "padding": "4px 8px"}
     content_disp = resp.headers.get("Content-Disposition", "")
     if "filename=" in content_disp:
         filename = content_disp.split("filename=")[-1].strip()
     else:
         filename = f"export.{fmt}"
-    return dcc.send_bytes(resp.content, filename)
+    return dcc.send_bytes(resp.content, filename), "", {"display": "none"}
 
 
 if __name__ == "__main__":
